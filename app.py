@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import io
 
 # --- 1. ENGINE V6.0 (THE BRAIN) ---
 def poly_hash_v6(string, modulo=1000):
@@ -33,6 +34,18 @@ def process_data(df, category_name):
     prefix = category_name.split(":")[0]
     col_out = category_name.split(": ")[1]
     
+    # Check for required columns before starting
+    required_cols = {
+        "0": ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit'],
+        "5": ['Cladding Panel', 'Backer Board']
+    }.get(prefix, ['MasterCode'])
+    
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        st.error(f"❌ Missing required columns: {', '.join(missing)}")
+        st.info("Please ensure your CSV headers match the names above exactly.")
+        return None
+
     def get_id(row):
         try:
             code = str(row.get('MasterCode', '')).upper()
@@ -48,8 +61,8 @@ def process_data(df, category_name):
                 return f"1{re.search(r'\d(\d)', seg[1]).group(1) if len(seg) > 1 else '0'}{poly_hash_v6(code)}-01"
             
             elif prefix in ["2", "3", "4"]:
-                # Colab logic for Kits uses 5 segments
-                return f"{prefix}{n2}{poly_hash_v6(''.join(seg[:5]))}-01"
+                # Match Colab: Uses full MasterCode for these Kits
+                return f"{prefix}{n2}{poly_hash_v6(code)}-01"
             
             elif prefix == "5":
                 panel = str(row.get('Cladding Panel', ''))
@@ -58,33 +71,37 @@ def process_data(df, category_name):
                 return f"5{n2_val}{poly_hash_v6(panel + backer)}-01"
             
             elif prefix == "8":
-                # Special Rule for Countertop: Uses 3 segments
+                # Match Colab: Countertop uses 3 segments
                 return f"8{n2}{poly_hash_v6(''.join(seg[:3]))}-01"
             
             elif prefix in ["6", "7", "9"]:
+                # Match Colab: Components use 4 segments
                 return f"{prefix}{n2}{poly_hash_v6(''.join(seg[:4]))}-01"
             
             return "UNKNOWN"
         except Exception: return "ERROR"
-
-    # Check for required columns based on category
-    required = {
-        "0": ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit'],
-        "5": ['Cladding Panel', 'Backer Board']
-    }.get(prefix, ['MasterCode'])
-    
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        st.error(f"Missing Columns in CSV: {', '.join(missing)}")
-        return None
 
     df[col_out] = df.apply(get_id, axis=1)
     return df
 
 # --- 4. WORKFLOW ---
 uploaded_file = st.file_uploader(f"Upload CSV for {category}", type="csv")
-if uploaded_file and st.button("Generate Diamond IDs"):
-    result = process_data(pd.read_csv(uploaded_file), category)
-    if result is not None:
-        st.success("Logic Synchronized with Colab!")
-        st.dataframe(result)
+
+if uploaded_file is not None:
+    input_df = pd.read_csv(uploaded_file)
+    
+    if st.button("🚀 Generate Diamond IDs"):
+        result_df = process_data(input_df, category)
+        
+        if result_df is not None:
+            st.success("✅ IDs Generated and Matched to History!")
+            st.dataframe(result_df)
+            
+            # THE RESTORED DOWNLOAD BUTTON
+            csv = result_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Processed CSV",
+                data=csv,
+                file_name=f"{category.replace(':', '').replace(' ', '_')}_Export.csv",
+                mime='text/csv',
+            )
