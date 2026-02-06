@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import re
-import io
 
 # --- 1. ENGINE V6.0 (THE BRAIN) ---
 def poly_hash_v6(string, modulo=1000):
@@ -22,9 +21,7 @@ def extract_n2(segment):
 # --- 2. APP CONFIGURATION ---
 st.set_page_config(page_title="Diamond Ecosystem v6.0", layout="wide")
 st.title("💎 Diamond Ecosystem v6.0")
-st.markdown("### Manufacturing BOM Master Control")
 
-# Sidebar Navigation
 category = st.sidebar.selectbox("Category Navigation", [
     "0: Master Sku", "1: Base Assy Kit", "2: Countertop Assy Kit",
     "3: Cladding Assy Kit", "4: Finish Kit", "5: Cladding Assy",
@@ -33,58 +30,61 @@ category = st.sidebar.selectbox("Category Navigation", [
 
 # --- 3. DYNAMIC LOGIC MAPPING ---
 def process_data(df, category_name):
-    try:
-        prefix = category_name.split(":")[0]
-        
-        def get_id(row):
-            code = str(row['MasterCode']).upper()
+    prefix = category_name.split(":")[0]
+    col_out = category_name.split(": ")[1]
+    
+    def get_id(row):
+        try:
+            code = str(row.get('MasterCode', '')).upper()
             seg = [s.strip() for s in code.split('-')]
             n2 = extract_n2(seg[1]) if len(seg) > 1 else 0
             
-            # CATEGORY 0: Master SKU
             if prefix == "0":
-                return f"0{str(row['Base Assy Kit'])[1] if len(str(row['Base Assy Kit'])) > 1 else '0'}{poly_hash_v6(str(row['Base Assy Kit']) + str(row['Countertop Assy Kit']) + str(row['Cladding Assy Kit']) + str(row['Finish Kit']))}-01"
+                kits = [str(row.get(k, '')) for k in ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit']]
+                n2_val = kits[0][1] if len(kits[0]) > 1 else '0'
+                return f"0{n2_val}{poly_hash_v6(''.join(kits))}-01"
             
-            # CATEGORY 1: Base Assy Kit
             elif prefix == "1":
                 return f"1{re.search(r'\d(\d)', seg[1]).group(1) if len(seg) > 1 else '0'}{poly_hash_v6(code)}-01"
             
-            # CATEGORY 2, 3, 4: (Uses 5 Segments)
             elif prefix in ["2", "3", "4"]:
-                fp = poly_hash_v6("".join(seg[:5]))
-                return f"{prefix}{n2}{fp}-01"
+                # Colab logic for Kits uses 5 segments
+                return f"{prefix}{n2}{poly_hash_v6(''.join(seg[:5]))}-01"
             
-            # CATEGORY 5: Cladding Assy
             elif prefix == "5":
-                return f"5{str(row['Cladding Panel'])[1] if len(str(row['Cladding Panel'])) > 1 else '0'}{poly_hash_v6(str(row['Cladding Panel']) + str(row['Backer Board']))}-01"
+                panel = str(row.get('Cladding Panel', ''))
+                backer = str(row.get('Backer Board', ''))
+                n2_val = panel[1] if len(panel) > 1 else '0'
+                return f"5{n2_val}{poly_hash_v6(panel + backer)}-01"
             
-            # CATEGORY 6, 7, 8, 9: (Uses 4 Segments)
-            elif prefix in ["6", "7", "8", "9"]:
-                fp = poly_hash_v6("".join(seg[:4]))
-                return f"{prefix}{n2}{fp}-01"
+            elif prefix == "8":
+                # Special Rule for Countertop: Uses 3 segments
+                return f"8{n2}{poly_hash_v6(''.join(seg[:3]))}-01"
             
-            return "ERROR"
+            elif prefix in ["6", "7", "9"]:
+                return f"{prefix}{n2}{poly_hash_v6(''.join(seg[:4]))}-01"
+            
+            return "UNKNOWN"
+        except Exception: return "ERROR"
 
-        col_out = category_name.split(": ")[1]
-        df[col_out] = df.apply(get_id, axis=1)
-        return df
-    except Exception as e:
-        st.error(f"Logic Error: {e}")
+    # Check for required columns based on category
+    required = {
+        "0": ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit'],
+        "5": ['Cladding Panel', 'Backer Board']
+    }.get(prefix, ['MasterCode'])
+    
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        st.error(f"Missing Columns in CSV: {', '.join(missing)}")
         return None
 
-# --- 4. USER WORKFLOW ---
-uploaded_file = st.file_uploader(f"Upload CSV for {category}", type="csv")
+    df[col_out] = df.apply(get_id, axis=1)
+    return df
 
-if uploaded_file is not None:
-    input_df = pd.read_csv(uploaded_file)
-    if st.button("Generate Diamond IDs"):
-        result_df = process_data(input_df, category)
-        if result_df is not None:
-            st.success("IDs Matched to Colab History!")
-            st.dataframe(result_df)
-            csv = result_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Results", csv, f"{category}_Output.csv", "text/csv")
-            
-            st.divider()
-            if st.button("🚀 Sync to Airtable"):
-                st.info("Ready to connect to Airtable. Please provide your API keys in Settings.")
+# --- 4. WORKFLOW ---
+uploaded_file = st.file_uploader(f"Upload CSV for {category}", type="csv")
+if uploaded_file and st.button("Generate Diamond IDs"):
+    result = process_data(pd.read_csv(uploaded_file), category)
+    if result is not None:
+        st.success("Logic Synchronized with Colab!")
+        st.dataframe(result)
