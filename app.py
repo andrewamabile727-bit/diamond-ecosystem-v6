@@ -34,7 +34,6 @@ category = st.sidebar.selectbox("Category Navigation", [
 # --- 3. DYNAMIC LOGIC MAPPING ---
 def process_data(df, category_name):
     try:
-        # Get prefix number (0-9)
         prefix = category_name.split(":")[0]
         
         def get_id(row):
