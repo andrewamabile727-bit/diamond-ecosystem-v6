@@ -37,7 +37,6 @@ S26496,"Back Sheath, Accessory Kit D (Beacon)",Buy,Ext. Cabinet Sheathing (S),$0
 S47899,"Top Sheath w/o Sink/Ice Bin, 24in wd. Low Module",Buy,Ext. Cabinet Sheathing (S),$21.31 ,MTO,HDC
 S76940,"Top Sheath with Sink/Ice Bin, 24in wd. Low Module",Buy,Ext. Cabinet Sheathing (S),$25.00 ,MTO,HDC
 S52166,"Bottom Sheath, 24in wd. Low Module",Buy,Ext. Cabinet Sheathing (S),$21.89 ,MTO,HDC
-S41502,"Side Sheath, 24in wd. Low Module",Buy,Ext. Cabinet Sheathing (S),$26.38 ,MTO,HDC
 S90669,"Back Sheath, 24in wd. Low Module, Accessory Kit A (No Accessory)",Buy,Ext. Cabinet Sheathing (S),$31.35 ,MTO,HDC
 S39496,"Top Sheath w/o Sink/Ice Bin, 32in wd. High Module",Buy,Ext. Cabinet Sheathing (S),$21.31 ,MTO,HDC
 S68537,"Top Sheath with Sink/Ice Bin, 32in wd. High Module",Buy,Ext. Cabinet Sheathing (S),$25.00 ,MTO,HDC
@@ -196,6 +195,7 @@ U23263,"Conv. Pkg. - Paper Towel Holder, Bottle Opener, Acc. Bar",Make,Accessori
 80846-01,90deg High_Low Corner Module Countertop,Make,Countertop  (C), $-   ,FAB,Internal
 82545-01,25in Sagamore LP Grill High Module,Make,Countertop  (C), $-   ,FAB,Internal
 83908-01,32in Sagamore LP Grill High Module,Make,Countertop  (C), $-   ,FAB,Internal
+84465-01,Side Wall - E-Grill Countertop,Make,Countertop  (C), $-   ,FAB,Internal
 21153-01,Beacon Countertop - No Accessory  ,Make,Countertop Assy (L), $-   ,FAB,Internal
 21067-01,Beacon Countertop - With Sink  ,Make,Countertop Assy (L), $-   ,FAB,Internal
 20469-01,Std. Low Module Countertop,Make,Countertop Assy (L), $-   ,FAB,Internal
@@ -321,7 +321,7 @@ K53583,"MICTUNING 15Amp 125V AC Port Plug with Heavy Duty Integrated Dual 20"" E
 K20115,"Aluminum J-Channel (144'' x 1-1/8"" x 5/8"" x 1/4"" x .270"")",Buy,Extrusion,$2.25 ,OTS,Eagle Aluminum
 K20116,"Aluminum Angle (144'' x 1-1/4"" x 1-1/4"" x 1/16"")",Buy,Extrusion,$2.76 ,OTS,Eagle Aluminum
 K20117,Aluminum Angle (144'' x 5/16'' x 1-1/2'' x 1/16''),Buy,Extrusion,$1.87 ,OTS,Eagle Aluminum
-K39476,"Adhesive Stud (M10), 316 SS, M10 x 1.5 mm Thread, 40mm L., 38mm D. Base",Buy,Hardware Fastener,$4.01 ,OTS,McMaster Carr
+K39476,"Adhesive Stud (M10), 316 SS, M10 x 1.5 mm Thread, 50mm L., 38mm D. Base",Buy,Hardware Fastener,$4.28 ,OTS,McMaster Carr
 K39477,"Flat Washer (M10), 316 SS, 10.5 mm ID, 18.0 mm OD",Buy,Hardware Fastener,$0.22 ,OTS,McMaster Carr
 K39478,"Hex Nut (M10), 316SS, M10 x 1.5 mm Thread Size",Buy,Hardware Fastener,$1.84 ,OTS,McMaster Carr
 K39479,"Lock Washer (M10), 316 SS, 10.7 mm ID, 16 mm OD",Buy,Hardware Fastener,$0.29 ,OTS,McMaster Carr
@@ -373,6 +373,10 @@ K63335,"59L (2.1CuFt) Refrigerator, Summit SPR314LOS",Buy,Appliance (Frefrigerat
 K23498,"All Right 25"" LP Grill",Buy,Appliance (Cooking), $-   ,BTO,"Wuxi Allright Metal Products Co., Ltd."
 K23499,"All Right 32"" LP Grill",Buy,Appliance (Cooking), $-   ,BTO,"Wuxi Allright Metal Products Co., Ltd."
 K23500,Electric Grill Model EG Home S,Buy,Appliance (Cooking), $-   ,BTO,Okpiro 
+K79313,"Slotted Unthreaded Spacers, 21/64"" OD, 3/4"" Long",,Hardware Specialty,$0.44 ,OTS,McMaster Carr
+K39639,"Aluminum Female Threaded Hex Standoff, 1/4-20 x 1/2"" L",,Hardware Fastener,$4.81 ,OTS,McMaster Carr
+K79314,"Locating Pin, 18-8 Stainless Steel, 1"" L x 1/4-20 Thread",,Hardware Specialty,$8.95 ,OTS,McMaster Carr
+K79315,"Stainless Steel Unthreaded Spacer, 1/2"" OD x 1/4"" L, #10 Screw Size",,Hardware Specialty,$3.84 ,OTS,McMaster Carr
 K39536,"10-32 Flat Head Phillips Head Screw, 7/16"" Long, SS, Undercut",Buy,Hardware Fastener,$0.14 ,OTS,McMaster Carr
 K39534,"Press-Fit Nut for Sheet Metal, 1/4""-20, for 0.047"" Minimum Panel Thickness",Buy,Hardware Fastener,$0.43 ,OTS,McMaster Carr
 K39580,"Press-Fit Nut for Sheet Metal, 8-32, for 0.040"" Minimum Panel Thickness",Buy,Hardware Fastener,$0.19 ,OTS,McMaster Carr
@@ -405,6 +409,9 @@ K80919,Drop In Double Door (751*532*95mm),Buy,"SS Doors,Drawers, Acc.",$73.50 ,B
 B98493,"Countertop Reinforcement Plate, 25in Sag. High Grill",Buy,Mounting & Acc. Parts (B), $-   ,MTO,HDC
 B16521,"Accessory Bar Attachment Plate, 25in Sag High Grill",Buy,Mounting & Acc. Parts (B), $-   ,MTO,HDC
 B98732,"Countertop Reinforcement Plate, 32in Sag. High Grill",Buy,Mounting & Acc. Parts (B), $-   ,MTO,HDC
+B70928,Retainer Puck - 16in Pizza Oven,Buy,Mounting & Acc. Parts (B), $-   ,MTO,TDB
+B90964,Retainer Puck - Sag. 16in E-Grill,Buy,Mounting & Acc. Parts (B), $-   ,MTO,TDB
+B68429,Cover Sheath - Sag. 16in E-Grill,Buy,Mounting & Acc. Parts (B), $-   ,MTO,HDC
 02017-01,"32in Wide High Mod., 63L Refrigerator",Make,Saleable SKU, $-   ,ATO,Internal
 02288-01,90deg. High Corner Module w/Light Post,Make,Saleable SKU, $-   ,ATO,Internal
 02469-01,90deg. Low Corner Module w/Light Post,Make,Saleable SKU, $-   ,ATO,Internal
