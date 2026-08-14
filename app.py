@@ -1,140 +1,120 @@
 import streamlit as st
 import pandas as pd
 import re
-import os
-import datetime
+import io
 
-st.set_page_config(page_title="BOM Pro v9.6", layout="wide")
+# --- 1. ENGINE V6.1 (THE BRAIN) ---
+def poly_hash_v6(string, modulo=1000):
+    h = 0
+    clean_str = str(string).upper().replace("-", "")
+    for char in clean_str:
+        h = (h * 53 + ord(char))
+    h += len(clean_str)
+    return f"{h % modulo:03d}"
 
-# --- 1. HARDCODED FILENAMES ---
-MASTER_FILE = "Item_Master_v4_Template.csv"
-LINKS_FILE = "BOM_Links_v4_Template.csv"
-SKU_FILE = "L0&L1 Skus..xlsx - Sheet1.csv"
+def extract_n2(segment):
+    nums = re.findall(r'\d+', str(segment))
+    if nums:
+        val = sum(int(n) for n in nums[:2])
+        return val % 10
+    return 0
 
-# --- 2. UNCACHED DIRECT FILE LOAD ---
-def load_data():
-    if not all(os.path.exists(f) for f in [MASTER_FILE, LINKS_FILE, SKU_FILE]):
-        return None, None, None
+def alpha_to_pos(s):
+    if pd.isna(s) or str(s).strip() == '': return 1
+    s = str(s).strip().upper()
+    if s.isdigit(): return int(s)
+    if s[0].isalpha(): return ord(s[0]) - ord('A') + 1
+    return 1
 
-    # Load CSVs and strip whitespace from text cells
-    df_m = pd.read_csv(MASTER_FILE, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
-    df_l = pd.read_csv(LINKS_FILE, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
-    df_s = pd.read_csv(SKU_FILE, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+# --- 2. APP CONFIGURATION ---
+st.set_page_config(page_title="Diamond Ecosystem v6.1", layout="wide")
+st.title("💎 Diamond Ecosystem v6.1")
+st.markdown("### Manufacturing BOM Master Control")
 
-    # Clean header titles and remove ghost columns created by Excel
-    for df in [df_m, df_l, df_s]:
-        df.columns = [str(c).strip() for c in df.columns]
-        df.drop(columns=[c for c in df.columns if 'Unnamed' in c or c == ''], inplace=True, errors='ignore')
+category = st.sidebar.selectbox("Category Navigation", [
+    "0: Master Sku", "1: Base Assy Kit", "2: Countertop Assy Kit",
+    "3: Cladding Assy Kit", "4: Finish Kit", "5: Cladding Assy",
+    "6: Cladding Panel", "7: Backer Board", "8: Countertop", "9: Frame"
+])
 
-    # Convert Unit Cost to clean floats
-    cost_col = next((c for c in df_m.columns if "Cost" in c), "Unit Cost")
-    df_m['Math_Cost'] = df_m[cost_col].replace(r'[^\d.]', '', regex=True).replace('', '0').astype(float)
+# --- 3. DYNAMIC LOGIC MAPPING ---
+def process_data(df, category_name):
+    prefix = category_name.split(":")[0]
+    col_out = category_name.split(": ")[1]
     
-    return df_m, df_l, df_s
-
-# --- 3. INITIALIZE & DIAGNOSTIC HEADER ---
-st.title("🚀 BOM Professional v9.6")
-
-df_m, df_l, df_s = load_data()
-
-if df_m is None:
-    st.error(f"🚨 Missing core CSV files! Ensure `{MASTER_FILE}`, `{LINKS_FILE}`, and `{SKU_FILE}` exist in your root GitHub repository folder.")
-    st.stop()
-
-# --- DIAGNOSTIC DEBUG BANNER ---
-mtime = os.path.getmtime(MASTER_FILE)
-mod_time_str = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-
-k39_row = df_m[df_m['Part No.'].astype(str).str.strip() == 'K39476']
-k39_cost_val = f"${k39_row['Math_Cost'].values[0]:,.2f}" if not k39_row.empty else "NOT FOUND"
-k39_desc_val = k39_row['Part Description'].values[0] if not k39_row.empty else "NOT FOUND"
-
-st.warning(f"🔍 **DEBUG BAR v9.6** | Server File Date: `{mod_time_str}` | K39476 Cost: `{k39_cost_val}` | Description: `{k39_desc_val}`")
-
-# Fast lookup dictionaries
-master_map = df_m.set_index('Part No.').to_dict('index')
-
-bom_tree = {}
-for _, row in df_l.iterrows():
-    parent = str(row.iloc[0]) # Parent Part
-    if parent not in bom_tree: 
-        bom_tree[parent] = []
-    bom_tree[parent].append({
-        'id': str(row.iloc[1]), # Child Part
-        'qty': pd.to_numeric(row.iloc[2], errors='coerce') or 1.0, # Quantity
-        'uom': str(row.iloc[3]) if len(row) > 3 else "Ea." # Unit of Measure
-    })
-
-# --- 4. NAVIGATION & SELECTION ---
-st.sidebar.header("Navigation")
-nav_type = st.sidebar.radio("View Depth", ["Top Level (SKU List)", "Sub-Assemblies (All Parents)"])
-
-cols = df_s.columns.tolist()
-cat_map = {
-    "Saleable SKUs": ("Saleable Sku", "Saleable Sku Description"),
-    "Base Assemblies": ("Base Assy Kit", "Base Assy Kit Description"),
-    "Countertops": ("Countertop Assy Kit", "Countertop Assy Kit Description"),
-    "Cladding": ("Cladding Assy Kit", "Cladding Assy Kit Description"),
-    "Finish Kits": ("Finish Kit", "Finish Kit Description")
-}
-
-if nav_type == "Top Level (SKU List)":
-    available_cats = [k for k, v in cat_map.items() if v[0] in cols]
-    mode = st.selectbox("Category", available_cats)
-    id_col, desc_col = cat_map[mode]
+    # Required Column: Level 0 has 4 inputs, all others use 'MasterCode'
+    required_cols = ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit'] if prefix == "0" else ['MasterCode']
     
-    options = []
-    valid_rows = df_s[df_s[id_col].notna() & (df_s[id_col] != "")]
-    for _, r in valid_rows.drop_duplicates(subset=[id_col]).iterrows():
-        options.append(f"{r[id_col]} | {r.get(desc_col, 'N/A')}")
-    selection = st.selectbox(f"Select {mode}", ["-- Select --"] + sorted(options))
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        st.error(f"❌ Missing required columns: {', '.join(missing)}")
+        return None
 
-else:
-    sub_options = []
-    for p_id in sorted(bom_tree.keys()):
-        p_desc = master_map.get(p_id, {}).get('Part Description', 'N/A')
-        sub_options.append(f"{p_id} | {p_desc}")
-    selection = st.selectbox("Select Sub-Assembly", ["-- Select --"] + sub_options)
-
-# --- 5. CALCULATION & EXPORT ENGINE ---
-if selection != "-- Select --":
-    sel_id = selection.split(" | ")[0].strip()
-    sel_name = selection.split(" | ")[1].strip()
-
-    final_bom = []
-    def explode(pid, depth=1, mult=1):
-        if depth > 12: return
-        for child in bom_tree.get(pid, []):
-            cid = child['id']
-            t_qty = mult * child['qty']
-            meta = master_map.get(cid, {})
+    def get_id(row):
+        try:
+            code = str(row.get('MasterCode', '')).upper().strip()
+            seg = [s.strip() for s in code.split('-')]
             
-            final_bom.append({
-                'Level': depth,
-                'Part No.': cid,
-                'Description': meta.get('Part Description', 'N/A'),
-                'Total Qty': t_qty,
-                'UOM': child['uom'],
-                'Unit Cost': meta.get('Math_Cost', 0.0),
-                'Ext. Cost': meta.get('Math_Cost', 0.0) * t_qty
-            })
-            explode(cid, depth + 1, t_qty)
+            # --- CATEGORY 0: MASTER SKU ---
+            if prefix == "0":
+                base, top = str(row.get('Base Assy Kit', '')), str(row.get('Countertop Assy Kit', ''))
+                clad, fin = str(row.get('Cladding Assy Kit', '')), str(row.get('Finish Kit', ''))
+                n2_val = base[1] if len(base) > 1 else '0'
+                return f"0{n2_val}{poly_hash_v6(base + top + clad + fin)}-01"
+            
+            # --- CATEGORY 1, 2, 3: KIT LOGIC ---
+            elif prefix in ["1", "2", "3"]:
+                match = re.search(r'\d(\d)', code)
+                n2_val = match.group(1) if match else "0"
+                return f"{prefix}{n2_val}{poly_hash_v6(code)}-01"
+            
+            # --- CATEGORY 4: FINISH KIT ---
+            elif prefix == "4":
+                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
+                return f"4{n2_val}{poly_hash_v6(code)}-01"
 
-    explode(sel_id)
+            # --- CATEGORY 5: CLADDING ASSY (V6.1 UPDATED) ---
+            elif prefix == "5":
+                # Input: O-61025-01-71815-01 -> Cleaned: 61025017181501
+                # This matches the original 'Panel + Backer' DNA perfectly.
+                if code.startswith('O-'):
+                    cleaned_code = code[2:].replace("-", "")
+                    n2_val = cleaned_code[1] if len(cleaned_code) > 1 else '0'
+                    return f"5{n2_val}{poly_hash_v6(cleaned_code)}-01"
+                return "FORMAT ERROR: Start with O-"
+            
+            # --- CATEGORY 6, 7: COMPONENTS ---
+            elif prefix in ["6", "7"]:
+                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
+                return f"{prefix}{n2_val}{poly_hash_v6(''.join(seg[:4]))}-01"
 
-    if final_bom:
-        res_df = pd.DataFrame(final_bom)
-        st.metric("Total Roll-up Cost", f"${res_df['Ext. Cost'].sum():,.2f}")
-        
-        # Display Table on Screen
-        disp = res_df.copy()
-        disp['Unit Cost'] = disp['Unit Cost'].map("${:,.2f}".format)
-        disp['Ext. Cost'] = disp['Ext. Cost'].map("${:,.2f}".format)
-        st.dataframe(disp, use_container_width=True, hide_index=True)
-        
-        # CSV Export with Single-Cell Header (Name, Number in Cell A1)
-        csv_header = f'"{sel_name}, {sel_id}"\n\n'
-        csv_body = res_df.to_csv(index=False)
-        st.download_button("📥 Download CSV", (csv_header + csv_body).encode('utf-8-sig'), f"BOM_{sel_id}.csv")
-    else:
-        st.warning(f"No components found for '{sel_id}'. Verify that this ID is listed in the 'Parent Part' column of `{LINKS_FILE}`.")
+            # --- CATEGORY 8: COUNTERTOP ---
+            elif prefix == "8":
+                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
+                return f"8{n2_val}{poly_hash_v6(''.join(seg[:3]))}-01"
+            
+            # --- CATEGORY 9: FRAME ---
+            elif prefix == "9":
+                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
+                fp = poly_hash_v6("".join(seg[:4]))
+                rev = alpha_to_pos(seg[4]) if len(seg) > 4 else 1
+                return f"9{n2_val}{fp}-{rev:02d}"
+
+            return "UNKNOWN"
+        except Exception: return "ERROR"
+
+    df[col_out] = df.apply(get_id, axis=1)
+    return df
+
+# --- 4. USER WORKFLOW ---
+uploaded_file = st.file_uploader(f"Upload CSV for {category}", type="csv")
+
+if uploaded_file is not None:
+    input_df = pd.read_csv(uploaded_file)
+    if st.button("🚀 Generate Diamond IDs"):
+        result_df = process_data(input_df, category)
+        if result_df is not None:
+            st.success(f"✅ Version 6.1 Active: {category} processed successfully.")
+            st.dataframe(result_df)
+            csv = result_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Processed CSV", csv, f"{category.replace(':','_')}_v6.1.csv", "text/csv")
