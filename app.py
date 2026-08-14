@@ -4,15 +4,14 @@ import re
 import os
 import datetime
 
-st.set_page_config(page_title="BOM Pro v9.5", layout="wide")
+st.set_page_config(page_title="BOM Pro v9.6", layout="wide")
 
 # --- 1. HARDCODED FILENAMES ---
 MASTER_FILE = "Item_Master_v4_Template.csv"
 LINKS_FILE = "BOM_Links_v4_Template.csv"
 SKU_FILE = "L0&L1 Skus..xlsx - Sheet1.csv"
 
-# --- 2. DATA LOADING ENGINE WITH INSTANT REFRESH ---
-@st.cache_data(ttl=1)  # 1-second TTL forces instant updates on file changes
+# --- 2. UNCACHED DIRECT FILE LOAD ---
 def load_data():
     if not all(os.path.exists(f) for f in [MASTER_FILE, LINKS_FILE, SKU_FILE]):
         return None, None, None
@@ -33,29 +32,24 @@ def load_data():
     
     return df_m, df_l, df_s
 
-# --- 3. INITIALIZE & DIAGNOSTIC BANNER ---
-st.title("🚀 BOM Professional v9.5")
-
-# --- DIAGNOSTIC BANNER TO VERIFY ACTIVE GITHUB FILE ---
-if os.path.exists(MASTER_FILE):
-    mtime = os.path.getmtime(MASTER_FILE)
-    mod_time_str = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Check live value for K39476 directly from loaded data
-    df_m_check, _, _ = load_data()
-    k39_price_str = "Not Found"
-    if df_m_check is not None:
-        k39_row = df_m_check[df_m_check['Part No.'] == 'K39476']
-        if not k39_row.empty:
-            k39_price_str = f"${k39_row['Math_Cost'].values[0]:,.2f}"
-
-    st.info(f"📄 **Active File:** `{MASTER_FILE}` | 🕒 **Last Modified on Server:** `{mod_time_str}` | 🏷️ **Live K39476 Unit Cost:** `{k39_price_str}`")
+# --- 3. INITIALIZE & DIAGNOSTIC HEADER ---
+st.title("🚀 BOM Professional v9.6")
 
 df_m, df_l, df_s = load_data()
 
 if df_m is None:
-    st.error(f"🚨 Missing core CSV files! Check that `{MASTER_FILE}`, `{LINKS_FILE}`, and `{SKU_FILE}` exist in your main GitHub directory.")
+    st.error(f"🚨 Missing core CSV files! Ensure `{MASTER_FILE}`, `{LINKS_FILE}`, and `{SKU_FILE}` exist in your root GitHub repository folder.")
     st.stop()
+
+# --- DIAGNOSTIC DEBUG BANNER ---
+mtime = os.path.getmtime(MASTER_FILE)
+mod_time_str = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+
+k39_row = df_m[df_m['Part No.'].astype(str).str.strip() == 'K39476']
+k39_cost_val = f"${k39_row['Math_Cost'].values[0]:,.2f}" if not k39_row.empty else "NOT FOUND"
+k39_desc_val = k39_row['Part Description'].values[0] if not k39_row.empty else "NOT FOUND"
+
+st.warning(f"🔍 **DEBUG BAR v9.6** | Server File Date: `{mod_time_str}` | K39476 Cost: `{k39_cost_val}` | Description: `{k39_desc_val}`")
 
 # Fast lookup dictionaries
 master_map = df_m.set_index('Part No.').to_dict('index')
@@ -96,7 +90,6 @@ if nav_type == "Top Level (SKU List)":
     selection = st.selectbox(f"Select {mode}", ["-- Select --"] + sorted(options))
 
 else:
-    # Sub-Assemblies dropdown showing Part Number | Description
     sub_options = []
     for p_id in sorted(bom_tree.keys()):
         p_desc = master_map.get(p_id, {}).get('Part Description', 'N/A')
@@ -110,7 +103,7 @@ if selection != "-- Select --":
 
     final_bom = []
     def explode(pid, depth=1, mult=1):
-        if depth > 12: return  # Safety limit to prevent infinite recursion
+        if depth > 12: return
         for child in bom_tree.get(pid, []):
             cid = child['id']
             t_qty = mult * child['qty']
