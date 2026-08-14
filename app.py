@@ -1,120 +1,129 @@
 import streamlit as st
 import pandas as pd
 import re
-import io
+import os
 
-# --- 1. ENGINE V6.1 (THE BRAIN) ---
-def poly_hash_v6(string, modulo=1000):
-    h = 0
-    clean_str = str(string).upper().replace("-", "")
-    for char in clean_str:
-        h = (h * 53 + ord(char))
-    h += len(clean_str)
-    return f"{h % modulo:03d}"
+st.set_page_config(page_title="BOM Pro v9.3", layout="wide")
 
-def extract_n2(segment):
-    nums = re.findall(r'\d+', str(segment))
-    if nums:
-        val = sum(int(n) for n in nums[:2])
-        return val % 10
-    return 0
-
-def alpha_to_pos(s):
-    if pd.isna(s) or str(s).strip() == '': return 1
-    s = str(s).strip().upper()
-    if s.isdigit(): return int(s)
-    if s[0].isalpha(): return ord(s[0]) - ord('A') + 1
-    return 1
-
-# --- 2. APP CONFIGURATION ---
-st.set_page_config(page_title="Diamond Ecosystem v6.1", layout="wide")
-st.title("💎 Diamond Ecosystem v6.1")
-st.markdown("### Manufacturing BOM Master Control")
-
-category = st.sidebar.selectbox("Category Navigation", [
-    "0: Master Sku", "1: Base Assy Kit", "2: Countertop Assy Kit",
-    "3: Cladding Assy Kit", "4: Finish Kit", "5: Cladding Assy",
-    "6: Cladding Panel", "7: Backer Board", "8: Countertop", "9: Frame"
-])
-
-# --- 3. DYNAMIC LOGIC MAPPING ---
-def process_data(df, category_name):
-    prefix = category_name.split(":")[0]
-    col_out = category_name.split(": ")[1]
+# Helper to get file modification times
+def get_file_mtimes():
+    def find_file(p):
+        return next((f for f in os.listdir('.') if p.lower() in f.lower() and f.endswith('.csv')), None)
     
-    # Required Column: Level 0 has 4 inputs, all others use 'MasterCode'
-    required_cols = ['Base Assy Kit', 'Countertop Assy Kit', 'Cladding Assy Kit', 'Finish Kit'] if prefix == "0" else ['MasterCode']
+    files = [find_file("Item_Master"), find_file("BOM_Links"), find_file("L0&L1 Skus")]
+    # Returns last modified timestamp for each file to automatically bust cache when files change on GitHub
+    return tuple(os.path.getmtime(f) if f and os.path.exists(f) else 0 for f in files)
+
+# Pass timestamps into the cached function as arguments
+@st.cache_data(ttl=3600)
+def load_and_prep_data(m_time, l_time, s_time):
+    def find_file(p):
+        return next((f for f in os.listdir('.') if p.lower() in f.lower() and f.endswith('.csv')), None)
     
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        st.error(f"❌ Missing required columns: {', '.join(missing)}")
-        return None
+    f_m, f_l, f_s = find_file("Item_Master"), find_file("BOM_Links"), find_file("L0&L1 Skus")
+    
+    if not all([f_m, f_l, f_s]):
+        return None, None, None
 
-    def get_id(row):
-        try:
-            code = str(row.get('MasterCode', '')).upper().strip()
-            seg = [s.strip() for s in code.split('-')]
+    # Load & Strip spaces
+    df_m = pd.read_csv(f_m, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    df_l = pd.read_csv(f_l, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    df_s = pd.read_csv(f_s, encoding='utf-8-sig').apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+
+    # Clean Headers
+    for df in [df_m, df_l, df_s]:
+        df.columns = [str(c).strip() for c in df.columns]
+        df.drop(columns=[c for c in df.columns if 'Unnamed' in c or c == ''], inplace=True, errors='ignore')
+
+    # Force Price to Number
+    cost_col = next((c for c in df_m.columns if "Cost" in c), "Unit Cost")
+    df_m['Math_Cost'] = df_m[cost_col].replace(r'[^\d.]', '', regex=True).replace('', '0').astype(float)
+    
+    return df_m, df_l, df_s
+
+# Get timestamps on every page load
+m_t, l_t, s_t = get_file_mtimes()
+df_m, df_l, df_s = load_and_prep_data(m_t, l_t, s_t)
+
+if df_m is None:
+    st.error("🚨 Missing core CSV files. Check your GitHub repository.")
+    st.stop()
+
+# Maps for fast lookup
+master_map = df_m.set_index('Part No.').to_dict('index')
+bom_tree = {}
+for _, row in df_l.iterrows():
+    p = str(row.iloc[0])
+    if p not in bom_tree: bom_tree[p] = []
+    bom_tree[p].append({
+        'id': str(row.iloc[1]), 
+        'qty': pd.to_numeric(row.iloc[2], errors='coerce') or 1.0,
+        'uom': str(row.iloc[3]) if len(row) > 3 else "Ea."
+    })
+
+# Navigation
+st.sidebar.header("Navigation")
+nav_type = st.sidebar.radio("View Depth", ["Top Level (SKU List)", "Sub-Assemblies (All Parents)"])
+
+cols = df_s.columns.tolist()
+cat_map = {
+    "Saleable SKUs": ("Saleable Sku", "Saleable Sku Description"),
+    "Base Assemblies": ("Base Assy Kit", "Base Assy Kit Description"),
+    "Countertops": ("Countertop Assy Kit", "Countertop Assy Kit Description"),
+    "Cladding": ("Cladding Assy Kit", "Cladding Assy Kit Description"),
+    "Finish Kits": ("Finish Kit", "Finish Kit Description")
+}
+
+if nav_type == "Top Level (SKU List)":
+    available_cats = [k for k, v in cat_map.items() if v[0] in cols]
+    mode = st.selectbox("Category", available_cats)
+    id_col, desc_col = cat_map[mode]
+    
+    options = []
+    valid_rows = df_s[df_s[id_col].notna() & (df_s[id_col] != "")]
+    for _, r in valid_rows.drop_duplicates(subset=[id_col]).iterrows():
+        options.append(f"{r[id_col]} | {r.get(desc_col, 'N/A')}")
+    selection = st.selectbox(f"Select {mode}", ["-- Select --"] + sorted(options))
+else:
+    sub_options = [f"{p_id} | {master_map.get(p_id, {}).get('Part Description', 'N/A')}" for p_id in sorted(bom_tree.keys())]
+    selection = st.selectbox("Select Sub-Assembly", ["-- Select --"] + sub_options)
+
+if selection != "-- Select --":
+    sel_id = selection.split(" | ")[0].strip()
+    sel_name = selection.split(" | ")[1].strip()
+
+    final_bom = []
+    def explode(pid, depth=1, mult=1):
+        if depth > 12: return
+        for child in bom_tree.get(pid, []):
+            cid = child['id']
+            t_qty = mult * child['qty']
+            meta = master_map.get(cid, {})
             
-            # --- CATEGORY 0: MASTER SKU ---
-            if prefix == "0":
-                base, top = str(row.get('Base Assy Kit', '')), str(row.get('Countertop Assy Kit', ''))
-                clad, fin = str(row.get('Cladding Assy Kit', '')), str(row.get('Finish Kit', ''))
-                n2_val = base[1] if len(base) > 1 else '0'
-                return f"0{n2_val}{poly_hash_v6(base + top + clad + fin)}-01"
-            
-            # --- CATEGORY 1, 2, 3: KIT LOGIC ---
-            elif prefix in ["1", "2", "3"]:
-                match = re.search(r'\d(\d)', code)
-                n2_val = match.group(1) if match else "0"
-                return f"{prefix}{n2_val}{poly_hash_v6(code)}-01"
-            
-            # --- CATEGORY 4: FINISH KIT ---
-            elif prefix == "4":
-                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
-                return f"4{n2_val}{poly_hash_v6(code)}-01"
+            final_bom.append({
+                'Level': depth,
+                'Part No.': cid,
+                'Description': meta.get('Part Description', 'N/A'),
+                'Total Qty': t_qty,
+                'UOM': child['uom'],
+                'Unit Cost': meta.get('Math_Cost', 0.0),
+                'Ext. Cost': meta.get('Math_Cost', 0.0) * t_qty
+            })
+            explode(cid, depth + 1, t_qty)
 
-            # --- CATEGORY 5: CLADDING ASSY (V6.1 UPDATED) ---
-            elif prefix == "5":
-                # Input: O-61025-01-71815-01 -> Cleaned: 61025017181501
-                # This matches the original 'Panel + Backer' DNA perfectly.
-                if code.startswith('O-'):
-                    cleaned_code = code[2:].replace("-", "")
-                    n2_val = cleaned_code[1] if len(cleaned_code) > 1 else '0'
-                    return f"5{n2_val}{poly_hash_v6(cleaned_code)}-01"
-                return "FORMAT ERROR: Start with O-"
-            
-            # --- CATEGORY 6, 7: COMPONENTS ---
-            elif prefix in ["6", "7"]:
-                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
-                return f"{prefix}{n2_val}{poly_hash_v6(''.join(seg[:4]))}-01"
+    explode(sel_id)
 
-            # --- CATEGORY 8: COUNTERTOP ---
-            elif prefix == "8":
-                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
-                return f"8{n2_val}{poly_hash_v6(''.join(seg[:3]))}-01"
-            
-            # --- CATEGORY 9: FRAME ---
-            elif prefix == "9":
-                n2_val = extract_n2(seg[1]) if len(seg) > 1 else 0
-                fp = poly_hash_v6("".join(seg[:4]))
-                rev = alpha_to_pos(seg[4]) if len(seg) > 4 else 1
-                return f"9{n2_val}{fp}-{rev:02d}"
-
-            return "UNKNOWN"
-        except Exception: return "ERROR"
-
-    df[col_out] = df.apply(get_id, axis=1)
-    return df
-
-# --- 4. USER WORKFLOW ---
-uploaded_file = st.file_uploader(f"Upload CSV for {category}", type="csv")
-
-if uploaded_file is not None:
-    input_df = pd.read_csv(uploaded_file)
-    if st.button("🚀 Generate Diamond IDs"):
-        result_df = process_data(input_df, category)
-        if result_df is not None:
-            st.success(f"✅ Version 6.1 Active: {category} processed successfully.")
-            st.dataframe(result_df)
-            csv = result_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Processed CSV", csv, f"{category.replace(':','_')}_v6.1.csv", "text/csv")
+    if final_bom:
+        res_df = pd.DataFrame(final_bom)
+        st.metric("Total Roll-up Cost", f"${res_df['Ext. Cost'].sum():,.2f}")
+        
+        disp = res_df.copy()
+        disp['Unit Cost'] = disp['Unit Cost'].map("${:,.2f}".format)
+        disp['Ext. Cost'] = disp['Ext. Cost'].map("${:,.2f}".format)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+        
+        csv_header = f'"{sel_name}, {sel_id}"\n\n'
+        csv_body = res_df.to_csv(index=False)
+        st.download_button("📥 Download CSV", (csv_header + csv_body).encode('utf-8-sig'), f"BOM_{sel_id}.csv")
+    else:
+        st.warning(f"No components found for {sel_id}.")
